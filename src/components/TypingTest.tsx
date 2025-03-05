@@ -95,11 +95,13 @@ const TypingTest: React.FC = () => {
       
     setAccuracy(finalAccuracy);
     
-    // Show toast
-    toast({
-      title: "Test completed!",
-      description: `Your typing speed: ${wpm} WPM with ${finalAccuracy}% accuracy`,
-    });
+    // Show toast with timeout to avoid React warning
+    setTimeout(() => {
+      toast({
+        title: "Test completed!",
+        description: `Your typing speed: ${wpm} WPM with ${finalAccuracy}% accuracy`,
+      });
+    }, 0);
   }, [charCount, errors, toast, wpm]);
   
   // Reset the test
@@ -123,6 +125,34 @@ const TypingTest: React.FC = () => {
     if (status !== "running") return;
     
     const inputValue = e.target.value;
+    const previousValue = input;
+    
+    // Detect if backspace was pressed
+    const isBackspace = inputValue.length < previousValue.length;
+    
+    if (isBackspace) {
+      // Handle backspace - go back one character
+      setCurrentCharIndex((prev) => Math.max(0, prev - 1));
+      
+      // Update stats
+      if (correctChars[currentCharIndex - 1] === false) {
+        // If previous character was wrong, decrease error count
+        setErrors((prev) => Math.max(0, prev - 1));
+      }
+      
+      // Update correctChars array for the deleted character
+      const newCorrectChars = [...correctChars];
+      newCorrectChars[currentCharIndex - 1] = null;
+      setCorrectChars(newCorrectChars);
+      
+      setCharCount((prev) => Math.max(0, prev - 1));
+      
+      // Update input
+      setInput(inputValue);
+      return;
+    }
+    
+    // Not backspace - handle normal typing case
     const lastChar = inputValue.charAt(inputValue.length - 1);
     
     // Space handling for word count
@@ -318,3 +348,4 @@ const TypingTest: React.FC = () => {
 };
 
 export default TypingTest;
+

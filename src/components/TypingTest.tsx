@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { Clock, Check, X, Percent } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -32,13 +31,16 @@ const TypingTest: React.FC = () => {
   const [accuracy, setAccuracy] = useState(100);
   const [errors, setErrors] = useState(0);
   const [currWordIndex, setCurrWordIndex] = useState(0);
-  const [currWordCorrectness, setCurrWordCorrectness] = useState<boolean | null>(null);
+  const [currCharIndex, setCurrCharIndex] = useState(0);
+  const [currChar, setCurrChar] = useState("");
+  const [correctChars, setCorrectChars] = useState<boolean[]>([]);
   const [completedWords, setCompletedWords] = useState<boolean[]>([]);
+  const [visibleWordIndices, setVisibleWordIndices] = useState<number[]>([]);
   
   // Refs
-  const inputRef = useRef<HTMLInputElement>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
   const testContainerRef = useRef<HTMLDivElement>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const wordContainerRef = useRef<HTMLDivElement>(null);
   
   // Load a random paragraph and split it into words
   const loadText = useCallback(() => {
@@ -50,15 +52,19 @@ const TypingTest: React.FC = () => {
     const wordArray = selectedText.split(" ");
     setWords(wordArray);
     
-    // Initialize completedWords array
+    // Initialize completed words array
     setCompletedWords(Array(wordArray.length).fill(null));
+    setCorrectChars(Array(wordArray[0]?.length || 0).fill(null));
+    
+    // Set initial visible words (e.g., first 10 words)
+    const initialVisible = Array.from({ length: Math.min(15, wordArray.length) }, (_, i) => i);
+    setVisibleWordIndices(initialVisible);
   }, []);
   
   // Start the test
   const startTest = () => {
     loadText();
     setStatus("running");
-    setInput("");
     setTime(60);
     setStartTime(Date.now());
     setWordCount(0);
@@ -67,10 +73,12 @@ const TypingTest: React.FC = () => {
     setAccuracy(100);
     setErrors(0);
     setCurrWordIndex(0);
-    setCurrWordCorrectness(null);
+    setCurrCharIndex(0);
+    setCurrChar("");
     
-    if (inputRef.current) {
-      inputRef.current.focus();
+    // Set focus to the test container
+    if (testContainerRef.current) {
+      testContainerRef.current.focus();
     }
     
     // Start the timer
@@ -116,7 +124,6 @@ const TypingTest: React.FC = () => {
   // Reset the test
   const resetTest = () => {
     setStatus("waiting");
-    setInput("");
     setText("");
     setWords([]);
     setTime(60);
@@ -127,28 +134,36 @@ const TypingTest: React.FC = () => {
     setAccuracy(100);
     setErrors(0);
     setCurrWordIndex(0);
-    setCurrWordCorrectness(null);
+    setCurrCharIndex(0);
+    setCurrChar("");
     setCompletedWords([]);
+    setCorrectChars([]);
+    setVisibleWordIndices([]);
   };
   
-  // Handle input change
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (status !== "running") return;
+  // Handle key presses
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (status !== "running") {
+      if (e.key === "Enter") {
+        startTest();
+      }
+      return;
+    }
     
-    const inputValue = e.target.value;
-    setInput(inputValue);
-    
+    // Get the current word
     const currentWord = words[currWordIndex];
-    const inputWithoutSpace = inputValue.trim();
     
-    // Check if the current word is being typed correctly
-    const isCorrect = currentWord.startsWith(inputWithoutSpace);
-    setCurrWordCorrectness(isCorrect);
+    // Prevent default for some keys to avoid browser shortcuts
+    if ([" ", "Tab", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+      e.preventDefault();
+    }
     
-    // Check if space was pressed (word completed)
-    if (inputValue.endsWith(" ")) {
-      // Word is complete, move to next word
-      const isWordCorrect = inputWithoutSpace === currentWord;
+    // Handle key press
+    if (e.key === "Escape") {
+      resetTest();
+    } else if (e.key === " ") {
+      // Space pressed, check if word is complete and move to next word
+      const isWordCorrect = currCharIndex === currentWord.length;
       
       // Update completed words array
       const newCompletedWords = [...completedWords];
@@ -160,14 +175,31 @@ const TypingTest: React.FC = () => {
       
       // Update error count
       if (!isWordCorrect) {
-        setErrors(prev => prev + 1);
+        setErrors(prev => prev + (currentWord.length - currCharIndex) + 
+          correctChars.filter(correct => correct === false).length);
       }
       
       // Move to next word
-      setCurrWordIndex(prev => prev + 1);
+      const nextWordIndex = currWordIndex + 1;
+      
+      // Update visible words if needed
+      if (nextWordIndex > visibleWordIndices[5] && nextWordIndex < words.length - 5) {
+        const newVisibleIndices = [];
+        for (let i = nextWordIndex - 5; i < nextWordIndex + 10; i++) {
+          if (i >= 0 && i < words.length) {
+            newVisibleIndices.push(i);
+          }
+        }
+        setVisibleWordIndices(newVisibleIndices);
+      }
+      
+      setCurrWordIndex(nextWordIndex);
+      setCurrCharIndex(0);
       setWordCount(prev => prev + 1);
-      setCurrWordCorrectness(null);
-      setInput(""); // Clear input for next word
+      
+      // Reset correct chars for the next word
+      const nextWord = words[nextWordIndex];
+      setCorrectChars(Array(nextWord?.length || 0).fill(null));
       
       // Calculate WPM in real-time
       if (startTime) {
@@ -181,18 +213,32 @@ const TypingTest: React.FC = () => {
       }
       
       // Check if reached end of text
-      if (currWordIndex >= words.length - 1) {
+      if (nextWordIndex >= words.length) {
         endTest();
       }
-    }
-  };
-  
-  // Handle key down for shortcuts
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Escape") {
-      resetTest();
-    } else if (e.key === "Enter" && status === "waiting") {
-      startTest();
+    } else if (e.key === "Backspace") {
+      // Backspace pressed, remove previous character
+      if (currCharIndex > 0) {
+        setCurrCharIndex(currCharIndex - 1);
+        
+        // Update correct chars
+        const newCorrectChars = [...correctChars];
+        newCorrectChars[currCharIndex - 1] = null;
+        setCorrectChars(newCorrectChars);
+      }
+    } else if (e.key.length === 1) {
+      // Regular character typed
+      const expectedChar = currentWord[currCharIndex];
+      const isCorrect = e.key === expectedChar;
+      
+      // Update correct chars
+      const newCorrectChars = [...correctChars];
+      newCorrectChars[currCharIndex] = isCorrect;
+      setCorrectChars(newCorrectChars);
+      
+      // Move to next character
+      setCurrCharIndex(currCharIndex + 1);
+      setCurrChar(e.key);
     }
   };
   
@@ -205,36 +251,65 @@ const TypingTest: React.FC = () => {
     };
   }, []);
   
-  // Render the words with highlighting for correct/incorrect words
+  // Render the words for typing
   const renderWords = () => {
     if (!words.length) return null;
     
     return (
-      <div 
-        ref={testContainerRef}
-        className="typing-test-container relative w-full overflow-hidden h-16 flex items-center justify-center bg-card rounded-lg shadow-sm border"
-      >
-        <div className="word-container flex items-center absolute transition-transform duration-200" 
-          style={{ transform: `translateX(calc(50% - ${currWordIndex * 8}rem))` }}>
+      <div className="typing-area relative flex justify-center items-center h-16 overflow-hidden bg-card rounded-lg shadow-sm border">
+        <div 
+          ref={wordContainerRef}
+          className="words-container flex items-center absolute transition-all duration-200"
+          style={{ transform: `translateX(calc(50% - ${(currWordIndex - visibleWordIndices[0]) * 4}rem))` }}
+        >
           {words.map((word, index) => {
-            let className = "mx-2 py-1 px-2 rounded transition-all duration-100 whitespace-nowrap";
+            // Only render visible words
+            if (!visibleWordIndices.includes(index)) return null;
+            
+            let wordClassName = "mx-1 py-1 px-2 rounded transition-all duration-100 flex whitespace-nowrap";
             
             if (index === currWordIndex) {
-              className += " bg-primary/10 border-b-2 border-primary";
+              wordClassName += " bg-primary/10";
             } else if (index < currWordIndex) {
-              className += completedWords[index] ? " text-green-600 dark:text-green-400" : " text-red-600 dark:text-red-400 line-through";
+              wordClassName += completedWords[index] 
+                ? " text-muted-foreground" 
+                : " text-red-500/50 line-through";
             } else {
-              className += " text-muted-foreground";
+              wordClassName += " text-foreground/80";
             }
             
             return (
-              <div key={index} className={className}>
-                {word}
+              <div key={index} className={wordClassName}>
+                {word.split("").map((char, charIndex) => {
+                  let charClassName = "transition-all";
+                  
+                  if (index === currWordIndex) {
+                    if (charIndex === currCharIndex) {
+                      charClassName += " relative";
+                    }
+                    if (charIndex < currCharIndex) {
+                      charClassName += correctChars[charIndex] 
+                        ? " text-green-600 dark:text-green-400"
+                        : " text-red-600 dark:text-red-400 underline";
+                    }
+                  }
+                  
+                  return (
+                    <span key={charIndex} className={charClassName}>
+                      {char}
+                      {index === currWordIndex && charIndex === currCharIndex && (
+                        <span className="absolute h-5 w-0.5 bg-primary animate-pulse-soft bottom-0 left-0"></span>
+                      )}
+                    </span>
+                  );
+                })}
               </div>
             );
           })}
         </div>
-        <div className="absolute pointer-events-none w-px h-6 bg-primary animate-pulse"></div>
+        {status === "running" && (
+          <div className="absolute pointer-events-none w-px h-6 bg-primary/70"></div>
+        )}
       </div>
     );
   };
@@ -303,7 +378,7 @@ const TypingTest: React.FC = () => {
       {status === "waiting" && (
         <div className="text-center space-y-4 animate-slide-up">
           <p className="text-muted-foreground">
-            Type the text below as fast and accurately as you can. You have 60 seconds.
+            Type the text as it appears in the center. Words flow from right to left. Press space to continue to the next word.
           </p>
           <Button 
             onClick={startTest} 
@@ -315,28 +390,14 @@ const TypingTest: React.FC = () => {
       )}
       
       {/* Words Display */}
-      {status !== "waiting" && renderWords()}
-      
-      {/* Input Field */}
-      {status === "running" && (
-        <div className="animate-slide-up">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            className={`w-full p-4 rounded-lg border transition-all ${
-              currWordCorrectness === false ? "border-red-500 bg-red-50 dark:bg-red-900/20" : 
-              currWordCorrectness === true ? "border-green-500 bg-green-50 dark:bg-green-900/20" : 
-              "bg-background border-border"
-            }`}
-            placeholder="Type here..."
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck="false"
-          />
+      {status !== "waiting" && (
+        <div 
+          ref={testContainerRef}
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          className="focus:outline-none focus:ring-2 focus:ring-primary/30 rounded-lg"
+        >
+          {renderWords()}
         </div>
       )}
       

@@ -4,13 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Clock, Check, X, Percent } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-// Sample paragraphs for typing test
+// Sample paragraphs for typing test - expanded to provide more content
 const sampleTexts = [
-  "The quick brown fox jumps over the lazy dog. The five boxing wizards jump quickly. Pack my box with five dozen liquor jugs. How vexingly quick daft zebras jump!",
-  "A journey of a thousand miles begins with a single step. The best way to predict the future is to create it. Life is what happens when you're busy making other plans.",
-  "Technology is best when it brings people together. Innovation distinguishes between a leader and a follower. Simplicity is the ultimate sophistication.",
-  "Success is not final, failure is not fatal: It is the courage to continue that counts. It always seems impossible until it's done. The only way to do great work is to love what you do.",
-  "The greatest glory in living lies not in never falling, but in rising every time we fall. The way to get started is to quit talking and begin doing. Your time is limited, so don't waste it living someone else's life."
+  "The quick brown fox jumps over the lazy dog. The five boxing wizards jump quickly. Pack my box with five dozen liquor jugs. How vexingly quick daft zebras jump! Amazingly few discotheques provide jukeboxes. Sphinx of black quartz, judge my vow.",
+  "A journey of a thousand miles begins with a single step. The best way to predict the future is to create it. Life is what happens when you're busy making other plans. Success is not final, failure is not fatal: It is the courage to continue that counts. The greatest glory in living lies not in never falling, but in rising every time we fall.",
+  "Technology is best when it brings people together. Innovation distinguishes between a leader and a follower. Simplicity is the ultimate sophistication. The only way to do great work is to love what you do. Your time is limited, so don't waste it living someone else's life. Stay hungry, stay foolish. Think different.",
+  "Success is not final, failure is not fatal: It is the courage to continue that counts. It always seems impossible until it's done. The only way to do great work is to love what you do. Never give up on a dream just because of the time it will take to accomplish it. The time will pass anyway.",
+  "The greatest glory in living lies not in never falling, but in rising every time we fall. The way to get started is to quit talking and begin doing. Your time is limited, so don't waste it living someone else's life. If life were predictable it would cease to be life, and be without flavor. In the end, it's not the years in your life that count. It's the life in your years."
 ];
 
 type TestStatus = "waiting" | "running" | "finished";
@@ -42,21 +42,21 @@ const TypingTest: React.FC = () => {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const wordContainerRef = useRef<HTMLDivElement>(null);
   
-  // Load a random paragraph and split it into words
+  // Load text and prepare for test
   const loadText = useCallback(() => {
-    const randomIndex = Math.floor(Math.random() * sampleTexts.length);
-    const selectedText = sampleTexts[randomIndex];
-    setText(selectedText);
+    // Combine multiple paragraphs to create longer text
+    const combinedText = sampleTexts.join(" ");
+    setText(combinedText);
     
     // Split text into words
-    const wordArray = selectedText.split(" ");
+    const wordArray = combinedText.split(" ");
     setWords(wordArray);
     
     // Initialize completed words array
     setCompletedWords(Array(wordArray.length).fill(null));
     setCorrectChars(Array(wordArray[0]?.length || 0).fill(null));
     
-    // Set initial visible words (e.g., first 10 words)
+    // Set initial visible words (e.g., first 15 words)
     const initialVisible = Array.from({ length: Math.min(15, wordArray.length) }, (_, i) => i);
     setVisibleWordIndices(initialVisible);
   }, []);
@@ -182,7 +182,7 @@ const TypingTest: React.FC = () => {
       // Move to next word
       const nextWordIndex = currWordIndex + 1;
       
-      // Update visible words if needed
+      // Load more words if running out
       if (nextWordIndex > visibleWordIndices[5] && nextWordIndex < words.length - 5) {
         const newVisibleIndices = [];
         for (let i = nextWordIndex - 5; i < nextWordIndex + 10; i++) {
@@ -191,6 +191,16 @@ const TypingTest: React.FC = () => {
           }
         }
         setVisibleWordIndices(newVisibleIndices);
+      }
+      
+      // Check if we're near the end of available words
+      if (nextWordIndex >= words.length - 10 && words.length < 1000) {
+        // Add more words by repeating the samples
+        const additionalText = sampleTexts[Math.floor(Math.random() * sampleTexts.length)];
+        const additionalWords = additionalText.split(" ");
+        
+        setWords(prevWords => [...prevWords, ...additionalWords]);
+        setCompletedWords(prevCompleted => [...prevCompleted, ...Array(additionalWords.length).fill(null)]);
       }
       
       setCurrWordIndex(nextWordIndex);
@@ -210,11 +220,6 @@ const TypingTest: React.FC = () => {
         // Update accuracy
         const currentAccuracy = Math.max(0, Math.min(100, Math.round((1 - errors / (charCount + currentWord.length + 1)) * 100)));
         setAccuracy(currentAccuracy);
-      }
-      
-      // Check if reached end of text
-      if (nextWordIndex >= words.length) {
-        endTest();
       }
     } else if (e.key === "Backspace") {
       // Backspace pressed, remove previous character
@@ -307,9 +312,6 @@ const TypingTest: React.FC = () => {
             );
           })}
         </div>
-        {status === "running" && (
-          <div className="absolute pointer-events-none w-px h-6 bg-primary/70"></div>
-        )}
       </div>
     );
   };

@@ -74,6 +74,20 @@ button, a, input, select, textarea {
   animation-delay: 300ms;
 }
 
+/* Pulse animation for cursor */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.animate-pulse-soft {
+  animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
 /* Typing text styles */
 .typing-text {
   font-family: monospace;
@@ -128,4 +142,3 @@ button, a, input, select, textarea {
   color: hsl(var(--muted-foreground));
   margin-top: 0.25rem;
 }
-

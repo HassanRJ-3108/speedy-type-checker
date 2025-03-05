@@ -22,6 +22,7 @@ const TypingTest: React.FC = () => {
   // State
   const [status, setStatus] = useState<TestStatus>("waiting");
   const [text, setText] = useState("");
+  const [words, setWords] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [time, setTime] = useState(60);
   const [startTime, setStartTime] = useState<number | null>(null);
@@ -30,20 +31,27 @@ const TypingTest: React.FC = () => {
   const [wpm, setWpm] = useState(0);
   const [accuracy, setAccuracy] = useState(100);
   const [errors, setErrors] = useState(0);
-  const [currentCharIndex, setCurrentCharIndex] = useState(0);
-  const [correctChars, setCorrectChars] = useState<boolean[]>([]);
+  const [currWordIndex, setCurrWordIndex] = useState(0);
+  const [currWordCorrectness, setCurrWordCorrectness] = useState<boolean | null>(null);
+  const [completedWords, setCompletedWords] = useState<boolean[]>([]);
   
   // Refs
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const testContainerRef = useRef<HTMLDivElement>(null);
   
-  // Load a random paragraph
+  // Load a random paragraph and split it into words
   const loadText = useCallback(() => {
     const randomIndex = Math.floor(Math.random() * sampleTexts.length);
-    setText(sampleTexts[randomIndex]);
+    const selectedText = sampleTexts[randomIndex];
+    setText(selectedText);
     
-    // Initialize correctChars array
-    setCorrectChars(Array(sampleTexts[randomIndex].length).fill(null));
+    // Split text into words
+    const wordArray = selectedText.split(" ");
+    setWords(wordArray);
+    
+    // Initialize completedWords array
+    setCompletedWords(Array(wordArray.length).fill(null));
   }, []);
   
   // Start the test
@@ -58,7 +66,8 @@ const TypingTest: React.FC = () => {
     setWpm(0);
     setAccuracy(100);
     setErrors(0);
-    setCurrentCharIndex(0);
+    setCurrWordIndex(0);
+    setCurrWordCorrectness(null);
     
     if (inputRef.current) {
       inputRef.current.focus();
@@ -109,6 +118,7 @@ const TypingTest: React.FC = () => {
     setStatus("waiting");
     setInput("");
     setText("");
+    setWords([]);
     setTime(60);
     setStartTime(null);
     setWordCount(0);
@@ -116,8 +126,9 @@ const TypingTest: React.FC = () => {
     setWpm(0);
     setAccuracy(100);
     setErrors(0);
-    setCurrentCharIndex(0);
-    setCorrectChars([]);
+    setCurrWordIndex(0);
+    setCurrWordCorrectness(null);
+    setCompletedWords([]);
   };
   
   // Handle input change
@@ -125,77 +136,63 @@ const TypingTest: React.FC = () => {
     if (status !== "running") return;
     
     const inputValue = e.target.value;
-    const previousValue = input;
-    
-    // Detect if backspace was pressed
-    const isBackspace = inputValue.length < previousValue.length;
-    
-    if (isBackspace) {
-      // Handle backspace - go back one character
-      setCurrentCharIndex((prev) => Math.max(0, prev - 1));
-      
-      // Update stats
-      if (correctChars[currentCharIndex - 1] === false) {
-        // If previous character was wrong, decrease error count
-        setErrors((prev) => Math.max(0, prev - 1));
-      }
-      
-      // Update correctChars array for the deleted character
-      const newCorrectChars = [...correctChars];
-      newCorrectChars[currentCharIndex - 1] = null;
-      setCorrectChars(newCorrectChars);
-      
-      setCharCount((prev) => Math.max(0, prev - 1));
-      
-      // Update input
-      setInput(inputValue);
-      return;
-    }
-    
-    // Not backspace - handle normal typing case
-    const lastChar = inputValue.charAt(inputValue.length - 1);
-    
-    // Space handling for word count
-    if (lastChar === " " && input.slice(-1) !== " ") {
-      setWordCount((prev) => prev + 1);
-    }
-    
-    // Track correctness of typed character
-    const currChar = text[currentCharIndex];
-    const isCorrect = lastChar === currChar;
-    
-    // Update correct chars array
-    const newCorrectChars = [...correctChars];
-    newCorrectChars[currentCharIndex] = isCorrect;
-    setCorrectChars(newCorrectChars);
-    
-    // Update character count and error count
-    setCharCount((prev) => prev + 1);
-    if (!isCorrect) {
-      setErrors((prev) => prev + 1);
-    }
-    
-    // Update current character index
-    setCurrentCharIndex((prev) => prev + 1);
-    
-    // Update input
     setInput(inputValue);
     
-    // Calculate WPM and accuracy in real-time
-    if (startTime) {
-      const elapsedMinutes = (Date.now() - startTime) / 60000;
-      const currentWpm = Math.round(wordCount / (elapsedMinutes || 0.01));
-      setWpm(currentWpm || 0);
-      
-      // Update accuracy
-      const totalChars = charCount + 1; // +1 for current char
-      const currentAccuracy = Math.max(0, Math.min(100, Math.round((1 - errors / totalChars) * 100)));
-      setAccuracy(currentAccuracy);
-    }
+    const currentWord = words[currWordIndex];
+    const inputWithoutSpace = inputValue.trim();
     
-    // Check if reached end of text
-    if (currentCharIndex >= text.length - 1) {
-      endTest();
+    // Check if the current word is being typed correctly
+    const isCorrect = currentWord.startsWith(inputWithoutSpace);
+    setCurrWordCorrectness(isCorrect);
+    
+    // Check if space was pressed (word completed)
+    if (inputValue.endsWith(" ")) {
+      // Word is complete, move to next word
+      const isWordCorrect = inputWithoutSpace === currentWord;
+      
+      // Update completed words array
+      const newCompletedWords = [...completedWords];
+      newCompletedWords[currWordIndex] = isWordCorrect;
+      setCompletedWords(newCompletedWords);
+      
+      // Update character count
+      setCharCount(prev => prev + currentWord.length + 1); // +1 for space
+      
+      // Update error count
+      if (!isWordCorrect) {
+        setErrors(prev => prev + 1);
+      }
+      
+      // Move to next word
+      setCurrWordIndex(prev => prev + 1);
+      setWordCount(prev => prev + 1);
+      setCurrWordCorrectness(null);
+      setInput(""); // Clear input for next word
+      
+      // Calculate WPM in real-time
+      if (startTime) {
+        const elapsedMinutes = (Date.now() - startTime) / 60000;
+        const currentWpm = Math.round((wordCount + 1) / (elapsedMinutes || 0.01));
+        setWpm(currentWpm || 0);
+        
+        // Update accuracy
+        const currentAccuracy = Math.max(0, Math.min(100, Math.round((1 - errors / (charCount + currentWord.length + 1)) * 100)));
+        setAccuracy(currentAccuracy);
+      }
+      
+      // Check if reached end of text
+      if (currWordIndex >= words.length - 1) {
+        endTest();
+      }
+    }
+  };
+  
+  // Handle key down for shortcuts
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      resetTest();
+    } else if (e.key === "Enter" && status === "waiting") {
+      startTest();
     }
   };
   
@@ -208,62 +205,103 @@ const TypingTest: React.FC = () => {
     };
   }, []);
   
-  // Render the text with highlighting for correct/incorrect chars
-  const renderText = () => {
-    if (!text) return null;
+  // Render the words with highlighting for correct/incorrect words
+  const renderWords = () => {
+    if (!words.length) return null;
     
     return (
-      <div className="typing-text-container w-full p-6 rounded-lg bg-card shadow-sm border">
-        <p className="typing-text text-left">
-          {text.split("").map((char, index) => {
-            let className = "";
+      <div 
+        ref={testContainerRef}
+        className="typing-test-container relative w-full overflow-hidden h-16 flex items-center justify-center bg-card rounded-lg shadow-sm border"
+      >
+        <div className="word-container flex items-center absolute transition-transform duration-200" 
+          style={{ transform: `translateX(calc(50% - ${currWordIndex * 8}rem))` }}>
+          {words.map((word, index) => {
+            let className = "mx-2 py-1 px-2 rounded transition-all duration-100 whitespace-nowrap";
             
-            if (index === currentCharIndex) {
-              className = "typing-current";
-            } else if (index < currentCharIndex) {
-              className = correctChars[index] ? "typing-correct" : "typing-incorrect";
+            if (index === currWordIndex) {
+              className += " bg-primary/10 border-b-2 border-primary";
+            } else if (index < currWordIndex) {
+              className += completedWords[index] ? " text-green-600 dark:text-green-400" : " text-red-600 dark:text-red-400 line-through";
+            } else {
+              className += " text-muted-foreground";
             }
             
             return (
-              <span key={index} className={className}>
-                {char}
-              </span>
+              <div key={index} className={className}>
+                {word}
+              </div>
             );
           })}
-          {currentCharIndex === text.length && <span className="typing-cursor"></span>}
-        </p>
+        </div>
+        <div className="absolute pointer-events-none w-px h-6 bg-primary animate-pulse"></div>
       </div>
     );
   };
   
   return (
     <div className="typing-test max-w-3xl w-full mx-auto space-y-8 animate-fade-in">
-      {/* Timer & Progress */}
-      <div className="flex justify-between items-center">
-        <div className="flex items-center space-x-2">
-          <Clock className="h-5 w-5 text-muted-foreground" />
-          <span className="font-mono text-xl">{time}s</span>
+      <div className="text-center">
+        <h1 className="text-3xl font-light tracking-tight">
+          Test your typing skills
+        </h1>
+      </div>
+
+      {/* Stats Display */}
+      <div className="grid grid-cols-4 gap-4">
+        <div className="stat-card p-4 rounded-lg bg-card border text-center relative overflow-hidden">
+          <div className="stats-value flex justify-center items-center">
+            {time}
+          </div>
+          <div className="stats-label">seconds</div>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <svg className="w-20 h-20 -z-10" viewBox="0 0 100 100">
+              <circle
+                className="text-muted stroke-current"
+                strokeWidth="4"
+                fill="transparent"
+                r="38"
+                cx="50"
+                cy="50"
+              />
+              <circle
+                className="text-primary stroke-current"
+                strokeWidth="4"
+                strokeLinecap="round"
+                fill="transparent"
+                r="38"
+                cx="50"
+                cy="50"
+                strokeDasharray="239.77"
+                strokeDashoffset={239.77 * (1 - time / 60)}
+                transform="rotate(-90 50 50)"
+              />
+            </svg>
+          </div>
         </div>
-        <Progress 
-          value={(time / 60) * 100} 
-          className="w-full max-w-xs h-2 mx-4" 
-        />
-        {status === "running" && (
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={endTest}
-            className="text-xs hover:bg-destructive hover:text-destructive-foreground"
-          >
-            End Test
-          </Button>
-        )}
+            
+        <div className="stat-card p-4 rounded-lg bg-card border text-center">
+          <div className="stats-value">{wpm}</div>
+          <div className="stats-label">words/min</div>
+        </div>
+            
+        <div className="stat-card p-4 rounded-lg bg-card border text-center">
+          <div className="stats-value">{charCount}</div>
+          <div className="stats-label">chars/min</div>
+        </div>
+            
+        <div className="stat-card p-4 rounded-lg bg-card border text-center">
+          <div className="stats-value flex justify-center items-center">
+            {accuracy}
+            <Percent className="h-5 w-5 inline ml-1 text-muted-foreground" />
+          </div>
+          <div className="stats-label">accuracy</div>
+        </div>
       </div>
       
       {/* Instructions */}
       {status === "waiting" && (
         <div className="text-center space-y-4 animate-slide-up">
-          <h1 className="text-3xl font-light tracking-tight">Typing Speed Test</h1>
           <p className="text-muted-foreground">
             Type the text below as fast and accurately as you can. You have 60 seconds.
           </p>
@@ -276,8 +314,8 @@ const TypingTest: React.FC = () => {
         </div>
       )}
       
-      {/* Text Display */}
-      {status !== "waiting" && renderText()}
+      {/* Words Display */}
+      {status !== "waiting" && renderWords()}
       
       {/* Input Field */}
       {status === "running" && (
@@ -287,13 +325,32 @@ const TypingTest: React.FC = () => {
             type="text"
             value={input}
             onChange={handleInputChange}
-            className="w-full p-4 rounded-lg border bg-background focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:outline-none transition-all"
-            placeholder="Start typing here..."
+            onKeyDown={handleKeyDown}
+            className={`w-full p-4 rounded-lg border transition-all ${
+              currWordCorrectness === false ? "border-red-500 bg-red-50 dark:bg-red-900/20" : 
+              currWordCorrectness === true ? "border-green-500 bg-green-50 dark:bg-green-900/20" : 
+              "bg-background border-border"
+            }`}
+            placeholder="Type here..."
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
             spellCheck="false"
           />
+        </div>
+      )}
+      
+      {/* Controls */}
+      {status === "running" && (
+        <div className="flex justify-center">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={endTest}
+            className="text-xs hover:bg-destructive hover:text-destructive-foreground"
+          >
+            End Test
+          </Button>
         </div>
       )}
       
@@ -318,10 +375,10 @@ const TypingTest: React.FC = () => {
             
             <div className="stat-card p-4 rounded-lg bg-card border text-center">
               <div className="stats-value flex justify-center items-center">
-                {correctChars.filter(Boolean).length}
+                {wordCount - errors}
                 <Check className="h-5 w-5 inline ml-1 text-green-500" />
               </div>
-              <div className="stats-label">Correct</div>
+              <div className="stats-label">Correct Words</div>
             </div>
             
             <div className="stat-card p-4 rounded-lg bg-card border text-center">
@@ -348,4 +405,3 @@ const TypingTest: React.FC = () => {
 };
 
 export default TypingTest;
-
